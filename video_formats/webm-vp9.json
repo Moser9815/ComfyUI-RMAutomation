@@ -1,0 +1,7 @@
+{
+  "extension": "webm",
+  "main_pass": ["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-pix_fmt", "yuv420p"],
+  "audio_pass": ["-c:a", "libopus", "-b:a", "128k"],
+  "save_metadata": "True",
+  "dim_alignment": 2
+}

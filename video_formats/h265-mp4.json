@@ -1,0 +1,7 @@
+{
+  "extension": "mp4",
+  "main_pass": ["-c:v", "libx265", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p", "-tag:v", "hvc1"],
+  "audio_pass": ["-c:a", "aac", "-b:a", "192k"],
+  "save_metadata": "True",
+  "dim_alignment": 2
+}
