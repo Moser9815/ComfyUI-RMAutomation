@@ -29,6 +29,8 @@ from .nodes.multi_detect_crop import NODE_CLASS_MAPPINGS as MULTI_DETECT_MAPPING
 from .nodes.multi_detect_crop import NODE_DISPLAY_NAME_MAPPINGS as MULTI_DETECT_DISPLAY
 from .nodes.math_expression import NODE_CLASS_MAPPINGS as MATH_EXPR_MAPPINGS
 from .nodes.math_expression import NODE_DISPLAY_NAME_MAPPINGS as MATH_EXPR_DISPLAY
+from .nodes.make_image_batch import NODE_CLASS_MAPPINGS as IMAGE_BATCH_MAPPINGS
+from .nodes.make_image_batch import NODE_DISPLAY_NAME_MAPPINGS as IMAGE_BATCH_DISPLAY
 
 # Combine all mappings
 NODE_CLASS_MAPPINGS = {
@@ -45,6 +47,7 @@ NODE_CLASS_MAPPINGS = {
     **FACE_DETAILER_MAPPINGS,
     **MULTI_DETECT_MAPPINGS,
     **MATH_EXPR_MAPPINGS,
+    **IMAGE_BATCH_MAPPINGS,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -61,6 +64,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **FACE_DETAILER_DISPLAY,
     **MULTI_DETECT_DISPLAY,
     **MATH_EXPR_DISPLAY,
+    **IMAGE_BATCH_DISPLAY,
 }
 
 WEB_DIRECTORY = "./js"
