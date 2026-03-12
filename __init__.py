@@ -15,12 +15,18 @@ from .nodes.image_fallback import NODE_CLASS_MAPPINGS as IMAGE_FALLBACK_MAPPINGS
 from .nodes.image_fallback import NODE_DISPLAY_NAME_MAPPINGS as IMAGE_FALLBACK_DISPLAY
 from .nodes.mask_gate import NODE_CLASS_MAPPINGS as MASK_GATE_MAPPINGS
 from .nodes.mask_gate import NODE_DISPLAY_NAME_MAPPINGS as MASK_GATE_DISPLAY
+from .nodes.mask_combine import NODE_CLASS_MAPPINGS as MASK_COMBINE_MAPPINGS
+from .nodes.mask_combine import NODE_DISPLAY_NAME_MAPPINGS as MASK_COMBINE_DISPLAY
 from .nodes.latent_nodes import NODE_CLASS_MAPPINGS as LATENT_MAPPINGS
 from .nodes.latent_nodes import NODE_DISPLAY_NAME_MAPPINGS as LATENT_DISPLAY
 from .nodes.text_embed import NODE_CLASS_MAPPINGS as TEXT_EMBED_MAPPINGS
 from .nodes.text_embed import NODE_DISPLAY_NAME_MAPPINGS as TEXT_EMBED_DISPLAY
 from .nodes.save_image_with_metadata import NODE_CLASS_MAPPINGS as SAVE_IMAGE_MAPPINGS
 from .nodes.save_image_with_metadata import NODE_DISPLAY_NAME_MAPPINGS as SAVE_IMAGE_DISPLAY
+from .nodes.face_detailer import NODE_CLASS_MAPPINGS as FACE_DETAILER_MAPPINGS
+from .nodes.face_detailer import NODE_DISPLAY_NAME_MAPPINGS as FACE_DETAILER_DISPLAY
+from .nodes.multi_detect_crop import NODE_CLASS_MAPPINGS as MULTI_DETECT_MAPPINGS
+from .nodes.multi_detect_crop import NODE_DISPLAY_NAME_MAPPINGS as MULTI_DETECT_DISPLAY
 
 # Combine all mappings
 NODE_CLASS_MAPPINGS = {
@@ -30,9 +36,12 @@ NODE_CLASS_MAPPINGS = {
     **VIDEO_MAPPINGS,
     **IMAGE_FALLBACK_MAPPINGS,
     **MASK_GATE_MAPPINGS,
+    **MASK_COMBINE_MAPPINGS,
     **LATENT_MAPPINGS,
     **TEXT_EMBED_MAPPINGS,
     **SAVE_IMAGE_MAPPINGS,
+    **FACE_DETAILER_MAPPINGS,
+    **MULTI_DETECT_MAPPINGS,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -42,9 +51,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     **VIDEO_DISPLAY,
     **IMAGE_FALLBACK_DISPLAY,
     **MASK_GATE_DISPLAY,
+    **MASK_COMBINE_DISPLAY,
     **LATENT_DISPLAY,
     **TEXT_EMBED_DISPLAY,
     **SAVE_IMAGE_DISPLAY,
+    **FACE_DETAILER_DISPLAY,
+    **MULTI_DETECT_DISPLAY,
 }
 
 WEB_DIRECTORY = "./js"

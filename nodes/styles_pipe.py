@@ -2,7 +2,11 @@
 RM Styles Pipe - Style pipe input/output nodes.
 """
 
+import os
+import glob
+import time
 from .styles_full import RMStylesFull
+from .progress_reporter import send_progress, ensure_preview_dir, PREVIEW_DIR
 
 
 class RMStylesPipe(RMStylesFull):
@@ -25,12 +29,32 @@ class RMStylesPipe(RMStylesFull):
                 "next_prompt": ("INT", {"default": 1, "min": 1, "max": 9999}),
                 "minimum": ("INT", {"default": 1, "min": 1, "max": 9999}),
                 "maximum": ("INT", {"default": 100, "min": 1, "max": 9999}),
+                "custom_json_path": ("STRING", {"default": ""}),
+            },
+            "hidden": {
+                "unique_id": "UNIQUE_ID",
             }
         }
 
-    def load_style(self, mode: str, previous_prompt: int, next_prompt: int, minimum: int, maximum: int):
+    def load_style(self, mode: str, previous_prompt: int, next_prompt: int, minimum: int, maximum: int, custom_json_path: str = "", unique_id=None):
         """Load style and return as a pipe tuple (without prefixes)."""
-        result = super().load_style(mode, previous_prompt, next_prompt, minimum, maximum, use_prefix=False)
+        # --- Progress Start: clear previews and notify viewer ---
+        try:
+            ensure_preview_dir()
+            for f in glob.glob(os.path.join(PREVIEW_DIR, "preview_*.jpg")):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+            send_progress({
+                "event": "workflow_start",
+                "workflow_name": "Generation",
+                "timestamp": time.time(),
+            })
+        except Exception as e:
+            print(f"[RMProgress] Error sending workflow_start: {e}")
+
+        result = super().load_style(mode, previous_prompt, next_prompt, minimum, maximum, use_prefix=False, custom_json_path=custom_json_path, unique_id=unique_id)
         return (result,)
 
 

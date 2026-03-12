@@ -404,10 +404,19 @@ styleSheet.textContent = `
 document.head.appendChild(styleSheet);
 
 class RMStylesEditorModal {
-  constructor() {
+  constructor(customPath = "") {
     this.styles = [];
     this.selectedStyle = null;
     this.overlay = null;
+    this.customPath = customPath;
+  }
+
+  _apiUrl(path) {
+    if (this.customPath) {
+      const sep = path.includes("?") ? "&" : "?";
+      return `${path}${sep}path=${encodeURIComponent(this.customPath)}`;
+    }
+    return path;
   }
 
   async open() {
@@ -424,7 +433,7 @@ class RMStylesEditorModal {
 
   async loadStyles() {
     try {
-      const response = await api.fetchApi("/api/rmautomation/styles");
+      const response = await api.fetchApi(this._apiUrl("/api/rmautomation/styles"));
       const data = await response.json();
       this.styles = data.styles || [];
     } catch (e) {
@@ -435,7 +444,7 @@ class RMStylesEditorModal {
 
   async saveStyle(style) {
     try {
-      const response = await api.fetchApi(`/api/rmautomation/styles/${style.number}`, {
+      const response = await api.fetchApi(this._apiUrl(`/api/rmautomation/styles/${style.number}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(style),
@@ -452,7 +461,7 @@ class RMStylesEditorModal {
   async deleteStyle(number) {
     if (!confirm(`Delete style #${number}?`)) return;
     try {
-      const response = await api.fetchApi(`/api/rmautomation/styles/${number}`, {
+      const response = await api.fetchApi(this._apiUrl(`/api/rmautomation/styles/${number}`), {
         method: "DELETE",
       });
       if (response.ok) {
@@ -473,11 +482,15 @@ class RMStylesEditorModal {
       if (e.target === this.overlay) this.close();
     };
 
+    const headerLabel = this.customPath
+      ? `RM Styles Editor - ${this.customPath.split(/[/\\]/).pop()}`
+      : "RM Styles Editor";
+
     const modal = document.createElement("div");
     modal.className = "rm-styles-modal";
     modal.innerHTML = `
       <div class="rm-styles-modal-header">
-        <h2>RM Styles Editor</h2>
+        <h2>${headerLabel}</h2>
         <button class="rm-styles-modal-close">&times;</button>
       </div>
       <div class="rm-styles-modal-content">
@@ -756,7 +769,7 @@ class RMStylesEditorModal {
 
   async importStyles(importedStyles, mode) {
     try {
-      const response = await api.fetchApi("/api/rmautomation/styles/import", {
+      const response = await api.fetchApi(this._apiUrl("/api/rmautomation/styles/import"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -792,8 +805,11 @@ app.registerExtension({
         onNodeCreated?.apply(this, arguments);
 
         // Add "Edit Styles" button
+        const node = this;
         const editBtn = this.addWidget("button", "Edit Styles", null, () => {
-          const modal = new RMStylesEditorModal();
+          const pathWidget = node.widgets?.find(w => w.name === "custom_json_path");
+          const customPath = pathWidget?.value?.trim() || "";
+          const modal = new RMStylesEditorModal(customPath);
           modal.open();
         });
       };

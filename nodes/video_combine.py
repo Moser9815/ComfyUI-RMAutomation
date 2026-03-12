@@ -22,6 +22,7 @@ import logging
 
 import folder_paths
 from comfy.utils import ProgressBar
+from .progress_reporter import send_progress
 
 # Logger setup
 class ColoredFormatter(logging.Formatter):
@@ -689,6 +690,16 @@ class RMVideoCombine:
                 logger.warn(f"Could not copy video to temp for preview: {e}")
 
         logger.info(f"Preview info - filename: {file}, subfolder: {preview_subfolder}, type: {preview_type}")
+
+        # --- Progress End: notify viewer that generation is complete ---
+        try:
+            send_progress({
+                "event": "workflow_end",
+                "message": "Complete",
+                "timestamp": time.time(),
+            })
+        except Exception as e:
+            logger.warning(f"[RMProgress] Error sending workflow_end: {e}")
 
         preview = {
             "filename": file,

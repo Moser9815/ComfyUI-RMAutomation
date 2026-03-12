@@ -3,7 +3,7 @@ RM Styles Full - Load prompts from JSON styles file with random/increment/decrem
 
 This node loads prompt data from a JSON file and supports multiple selection modes:
 - Manual: Use the exact next_prompt number specified
-- Random: JS calculates random number within min/max range
+- Random: Python picks a random style, avoiding the last 30 used
 - Increment: JS increments after each execution (wraps at max)
 - Decrement: JS decrements after each execution (wraps at min)
 
@@ -12,9 +12,38 @@ The JSON file can be edited via a modal editor accessible from a button on the n
 
 import json
 import os
+import random
 from pathlib import Path
 from server import PromptServer
 from aiohttp import web
+
+# Anti-repeat history for Random mode (module-level, shared across all style nodes)
+RANDOM_HISTORY_SIZE = 30
+_random_history = []
+
+
+def _get_random_prompt(minimum, maximum, available_numbers):
+    """Pick a random style number from available styles, avoiding recently used ones."""
+    global _random_history
+
+    candidates = [n for n in available_numbers if minimum <= n <= maximum]
+    if not candidates:
+        return random.randint(minimum, maximum)
+
+    effective_buffer = min(RANDOM_HISTORY_SIZE, len(candidates) - 1)
+    avoid = set(_random_history[-effective_buffer:]) if effective_buffer > 0 else set()
+
+    good = [n for n in candidates if n not in avoid]
+    if not good:
+        good = candidates  # All avoided, pick any
+
+    result = random.choice(good)
+
+    _random_history.append(result)
+    if len(_random_history) > RANDOM_HISTORY_SIZE:
+        _random_history[:] = _random_history[-RANDOM_HISTORY_SIZE:]
+
+    return result
 
 
 class RMStylesFull:
@@ -51,18 +80,27 @@ class RMStylesFull:
     def __init__(self):
         self._styles_cache = None
         self._styles_mtime = 0
+        self._styles_path = None
 
-    def _load_styles(self) -> dict:
+    def _load_styles(self, custom_path=None) -> dict:
         """Load styles from JSON file with caching."""
         try:
-            if not self.STYLES_FILE.exists():
-                print(f"[RMStylesFull] Styles file not found: {self.STYLES_FILE}")
+            styles_file = Path(custom_path) if custom_path else self.STYLES_FILE
+
+            # Invalidate cache if file path changed
+            if self._styles_path != str(styles_file):
+                self._styles_cache = None
+                self._styles_mtime = 0
+                self._styles_path = str(styles_file)
+
+            if not styles_file.exists():
+                print(f"[RMStylesFull] Styles file not found: {styles_file}")
                 return {}
 
-            current_mtime = self.STYLES_FILE.stat().st_mtime
+            current_mtime = styles_file.stat().st_mtime
 
             if self._styles_cache is None or current_mtime > self._styles_mtime:
-                with open(self.STYLES_FILE, 'r', encoding='utf-8') as f:
+                with open(styles_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
 
                 self._styles_cache = {}
@@ -72,7 +110,7 @@ class RMStylesFull:
                         self._styles_cache[num] = style
 
                 self._styles_mtime = current_mtime
-                print(f"[RMStylesFull] Loaded {len(self._styles_cache)} styles from JSON")
+                print(f"[RMStylesFull] Loaded {len(self._styles_cache)} styles from {styles_file}")
 
             return self._styles_cache
         except Exception as e:
@@ -113,6 +151,13 @@ class RMStylesFull:
                     "default": False,
                     "tooltip": "Add quality prefixes to positive/negative prompts"
                 }),
+                "custom_json_path": ("STRING", {
+                    "default": "",
+                    "tooltip": "Path to a custom styles JSON file. Leave empty to use the default styles.json in the node pack."
+                }),
+            },
+            "hidden": {
+                "unique_id": "UNIQUE_ID",
             }
         }
 
@@ -145,15 +190,20 @@ class RMStylesFull:
 
         return ", ".join(formatted)
 
-    def load_style(self, mode: str, previous_prompt: int, next_prompt: int, minimum: int, maximum: int, use_prefix: bool = False):
+    def load_style(self, mode: str, previous_prompt: int, next_prompt: int, minimum: int, maximum: int, use_prefix: bool = False, custom_json_path: str = "", unique_id=None):
         """Main node execution function."""
         empty_result = ("", "", "", "", "", "", 0, "")
 
-        styles = self._load_styles()
+        custom_path = custom_json_path.strip() if custom_json_path else None
+        styles = self._load_styles(custom_path)
         if not styles:
             return empty_result
 
-        selected_number = next_prompt
+        # Random mode: Python picks the number, ignoring next_prompt
+        if mode == "Random":
+            selected_number = _get_random_prompt(minimum, maximum, list(styles.keys()))
+        else:
+            selected_number = next_prompt
 
         if selected_number not in styles:
             available = sorted(styles.keys())
@@ -189,6 +239,13 @@ class RMStylesFull:
         image_loras_str = self._format_loras(image_loras)
         motion_loras_high_str = self._format_loras(motion_loras_high)
         motion_loras_low_str = self._format_loras(motion_loras_low)
+
+        # Send actual used number back to JS for widget update
+        if unique_id is not None:
+            PromptServer.instance.send_sync("rm_styles_executed", {
+                "node_id": str(unique_id),
+                "prompt_number": selected_number,
+            })
 
         return (
             positive,
@@ -236,15 +293,18 @@ class RMStylesFullDisplay(RMStylesFull):
                 "use_prefix": ("BOOLEAN", {
                     "default": False,
                 }),
+                "custom_json_path": ("STRING", {
+                    "default": "",
+                }),
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
             }
         }
 
-    def load_style(self, mode: str, previous_prompt: int, next_prompt: int, minimum: int, maximum: int, use_prefix: bool = False, unique_id=None):
+    def load_style(self, mode: str, previous_prompt: int, next_prompt: int, minimum: int, maximum: int, use_prefix: bool = False, custom_json_path: str = "", unique_id=None):
         """Same as parent but also returns UI data to display on the node."""
-        result = super().load_style(mode, previous_prompt, next_prompt, minimum, maximum, use_prefix)
+        result = super().load_style(mode, previous_prompt, next_prompt, minimum, maximum, use_prefix, custom_json_path=custom_json_path, unique_id=unique_id)
 
         positive = result[0] if result[0] else "(empty)"
         prompt_num = result[6]
@@ -268,14 +328,26 @@ def setup_styles_api():
     """Register API routes for the styles editor modal."""
     try:
         data_dir = Path(__file__).parent.parent / "data"
-        styles_file = data_dir / "styles.json"
+        default_styles_file = data_dir / "styles.json"
+
+        def _resolve_styles_file(request):
+            """Get the styles file path, using custom path from query param if provided."""
+            custom = request.query.get('path', '').strip()
+            if custom:
+                return Path(custom)
+            return default_styles_file
+
+        def _ensure_parent_dir(file_path):
+            """Create parent directory if it doesn't exist."""
+            os.makedirs(file_path.parent, exist_ok=True)
 
         @PromptServer.instance.routes.get("/api/rmautomation/styles")
         async def get_styles(request):
             try:
-                if not styles_file.exists():
+                target = _resolve_styles_file(request)
+                if not target.exists():
                     return web.json_response({"styles": []})
-                with open(styles_file, 'r', encoding='utf-8') as f:
+                with open(target, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 return web.json_response(data)
             except Exception as e:
@@ -285,8 +357,9 @@ def setup_styles_api():
         async def save_styles(request):
             try:
                 data = await request.json()
-                os.makedirs(data_dir, exist_ok=True)
-                with open(styles_file, 'w', encoding='utf-8') as f:
+                target = _resolve_styles_file(request)
+                _ensure_parent_dir(target)
+                with open(target, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                 return web.json_response({"success": True})
             except Exception as e:
@@ -296,9 +369,10 @@ def setup_styles_api():
         async def get_style(request):
             try:
                 number = int(request.match_info['number'])
-                if not styles_file.exists():
+                target = _resolve_styles_file(request)
+                if not target.exists():
                     return web.json_response({"error": "Styles file not found"}, status=404)
-                with open(styles_file, 'r', encoding='utf-8') as f:
+                with open(target, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 for style in data.get('styles', []):
                     if style.get('number') == number:
@@ -314,10 +388,11 @@ def setup_styles_api():
                 new_style = await request.json()
                 new_style['number'] = number
 
-                if not styles_file.exists():
+                target = _resolve_styles_file(request)
+                if not target.exists():
                     data = {"styles": []}
                 else:
-                    with open(styles_file, 'r', encoding='utf-8') as f:
+                    with open(target, 'r', encoding='utf-8') as f:
                         data = json.load(f)
 
                 styles = data.get('styles', [])
@@ -333,8 +408,8 @@ def setup_styles_api():
                     styles.sort(key=lambda x: x.get('number', 0))
 
                 data['styles'] = styles
-                os.makedirs(data_dir, exist_ok=True)
-                with open(styles_file, 'w', encoding='utf-8') as f:
+                _ensure_parent_dir(target)
+                with open(target, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
 
                 return web.json_response({"success": True})
@@ -345,16 +420,17 @@ def setup_styles_api():
         async def delete_style(request):
             try:
                 number = int(request.match_info['number'])
-                if not styles_file.exists():
+                target = _resolve_styles_file(request)
+                if not target.exists():
                     return web.json_response({"error": "Styles file not found"}, status=404)
 
-                with open(styles_file, 'r', encoding='utf-8') as f:
+                with open(target, 'r', encoding='utf-8') as f:
                     data = json.load(f)
 
                 styles = [s for s in data.get('styles', []) if s.get('number') != number]
                 data['styles'] = styles
 
-                with open(styles_file, 'w', encoding='utf-8') as f:
+                with open(target, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
 
                 return web.json_response({"success": True})
@@ -372,34 +448,30 @@ def setup_styles_api():
                 if not imported_styles:
                     return web.json_response({"error": "No styles provided"}, status=400)
 
-                os.makedirs(data_dir, exist_ok=True)
+                target = _resolve_styles_file(request)
+                _ensure_parent_dir(target)
 
                 if mode == 'replace':
-                    # Replace all existing styles with imported ones
-                    # Ensure proper numbering
                     for i, style in enumerate(imported_styles):
                         if 'number' not in style:
                             style['number'] = i + 1
                     imported_styles.sort(key=lambda x: x.get('number', 0))
                     data = {"styles": imported_styles}
                 else:
-                    # Append mode: add imported styles after existing ones
-                    if styles_file.exists():
-                        with open(styles_file, 'r', encoding='utf-8') as f:
+                    if target.exists():
+                        with open(target, 'r', encoding='utf-8') as f:
                             data = json.load(f)
                     else:
                         data = {"styles": []}
 
                     existing_styles = data.get('styles', [])
 
-                    # Find the highest existing number
                     max_number = 0
                     for style in existing_styles:
                         num = style.get('number', 0)
                         if num > max_number:
                             max_number = num
 
-                    # Renumber imported styles to start after the highest existing number
                     for i, style in enumerate(imported_styles):
                         style['number'] = max_number + i + 1
 
@@ -407,7 +479,7 @@ def setup_styles_api():
                     existing_styles.sort(key=lambda x: x.get('number', 0))
                     data['styles'] = existing_styles
 
-                with open(styles_file, 'w', encoding='utf-8') as f:
+                with open(target, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
 
                 return web.json_response({"success": True, "count": len(imported_styles)})

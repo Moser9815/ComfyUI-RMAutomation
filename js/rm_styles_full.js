@@ -1,6 +1,7 @@
 /**
  * RM Styles Full - Frontend Widget Controller
- * Handles mode switching, random/increment/decrement logic
+ * Handles mode switching, increment/decrement logic.
+ * Random mode is handled server-side (Python) with anti-repeat history.
  */
 
 import { app } from "../../scripts/app.js";
@@ -8,69 +9,21 @@ import { api } from "../../scripts/api.js";
 
 console.log("[RMStyles] Script loading...");
 
-const RANDOM_HISTORY_SIZE = 30;
 const RM_STYLES_NODES = ["RMStylesFull", "RMStylesFullDisplay", "RMStylesPipe"];
 
 /**
- * Generate a random integer between min and max (inclusive),
- * avoiding recently used values tracked in the history array.
+ * Calculate the next prompt number based on mode (Increment/Decrement only)
  */
-function randomInRange(min, max, history) {
-  if (min >= max) return min;
-
-  const range = max - min + 1;
-
-  if (history) {
-    const effectiveBuffer = Math.min(RANDOM_HISTORY_SIZE, range - 1);
-    const avoid = new Set(history.slice(-effectiveBuffer));
-    let result, attempts = 0;
-    do {
-      result = Math.floor(Math.random() * range) + min;
-      attempts++;
-    } while (avoid.has(result) && attempts < 100);
-
-    history.push(result);
-    if (history.length > RANDOM_HISTORY_SIZE) {
-      history.splice(0, history.length - RANDOM_HISTORY_SIZE);
-    }
-    return result;
-  }
-
-  return Math.floor(Math.random() * range) + min;
-}
-
-/**
- * Calculate the next prompt number based on mode
- */
-function calculateNextNumber(mode, current, min, max, history) {
-  let result;
+function calculateNextNumber(mode, current, min, max) {
   switch (mode) {
-    case "Random":
-      result = randomInRange(min, max, history);
-      break;
     case "Increment":
-      result = current >= max ? min : current + 1;
-      break;
+      return current >= max ? min : current + 1;
     case "Decrement":
-      result = current <= min ? max : current - 1;
-      break;
+      return current <= min ? max : current - 1;
     case "Manual":
     default:
-      result = current;
+      return current;
   }
-  return result;
-}
-
-/**
- * Get all widget values from a node for debugging
- */
-function getWidgetValues(node) {
-  if (!node?.widgets) return "no widgets";
-  const values = {};
-  for (const w of node.widgets) {
-    values[w.name] = w.value;
-  }
-  return values;
 }
 
 /**
@@ -97,11 +50,6 @@ function setupNodeWidgets(node) {
   // Store widget references on node for easy access
   node._rmWidgets = { modeWidget, prevWidget, nextWidget, minWidget, maxWidget };
 
-  // History buffer to prevent random repeats
-  if (!node._rmHistory) {
-    node._rmHistory = [];
-  }
-
   // Flag to prevent recursive callbacks
   node._rmUpdating = false;
 
@@ -115,12 +63,12 @@ function setupNodeWidgets(node) {
     if (node._rmUpdating) return;
     node._rmUpdating = true;
 
-    // Calculate new next_prompt based on mode
-    if (value !== "Manual") {
+    // Calculate new next_prompt for Increment/Decrement preview
+    if (value !== "Manual" && value !== "Random") {
       const current = nextWidget.value;
       const min = minWidget.value;
       const max = maxWidget.value;
-      const newValue = calculateNextNumber(value, current, min, max, node._rmHistory);
+      const newValue = calculateNextNumber(value, current, min, max);
       nextWidget.value = newValue;
       console.log(`[RMStyles] Mode changed to ${value}, next_prompt: ${newValue}`);
     }
@@ -147,31 +95,26 @@ function setupNodeWidgets(node) {
 }
 
 /**
- * Handle node execution complete
+ * Handle node execution complete (Increment/Decrement only)
+ * Random mode is handled by the rm_styles_executed message from Python.
  */
 function handleNodeExecuted(node) {
   const w = node._rmWidgets;
   if (!w) return;
 
   const mode = w.modeWidget.value;
-  const usedPrompt = w.nextWidget.value;
-  const min = w.minWidget.value;
-  const max = w.maxWidget.value;
 
-  // Update previous_prompt to show what was just used
+  // Random mode: Python handles everything via rm_styles_executed message
+  if (mode === "Random") return;
+
+  const usedPrompt = w.nextWidget.value;
+
   node._rmUpdating = true;
   w.prevWidget.value = usedPrompt;
 
-  // Calculate new next_prompt for non-Manual modes
+  // Calculate new next_prompt for Increment/Decrement
   if (mode !== "Manual") {
-    // Add the USED prompt to history before generating new one
-    if (mode === "Random" && !node._rmHistory.includes(usedPrompt)) {
-      node._rmHistory.push(usedPrompt);
-      if (node._rmHistory.length > RANDOM_HISTORY_SIZE) {
-        node._rmHistory.splice(0, node._rmHistory.length - RANDOM_HISTORY_SIZE);
-      }
-    }
-    const newNext = calculateNextNumber(mode, usedPrompt, min, max, node._rmHistory);
+    const newNext = calculateNextNumber(mode, usedPrompt, w.minWidget.value, w.maxWidget.value);
     w.nextWidget.value = newNext;
     console.log(`[RMStyles] Execution complete: used=${usedPrompt}, next=${newNext}, mode=${mode}`);
   }
@@ -228,6 +171,19 @@ app.registerExtension({
       }
       pendingNodes.clear();
     };
+
+    // Listen for Python's random selection message
+    api.addEventListener("rm_styles_executed", (e) => {
+      const { node_id, prompt_number } = e.detail;
+      const node = app.graph?.getNodeById(Number(node_id));
+      if (!node || !node._rmWidgets) return;
+
+      node._rmUpdating = true;
+      node._rmWidgets.prevWidget.value = prompt_number;
+      node._rmUpdating = false;
+
+      console.log(`[RMStyles] Python selected prompt #${prompt_number} (node ${node_id})`);
+    });
 
     api.addEventListener("execution_start", (e) => {
       pendingNodes.clear();
